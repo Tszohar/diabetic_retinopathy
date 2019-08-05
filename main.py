@@ -3,7 +3,7 @@ import shutil
 
 import torch
 import torch.nn as nn
-import numpy as np
+import torchvision
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from sklearn.metrics import accuracy_score
@@ -12,16 +12,16 @@ import datetime
 
 from timer import Timer
 from model import get_model
-from data import BDDataset, ToTensor
+from data import BDDataset
 
-root_folder = '/home/guy/tsofit/blindness detection'
+root_folder = '/media/guy/Files 3/Tsofit/blindness detection'
 data_dir = os.path.join(root_folder, 'train_images')
 train_csv = os.path.join(root_folder, 'train.csv')
 validation_csv = os.path.join(root_folder, 'validation.csv')
 
 
 if __name__ == '__main__':
-    batch_size = 64
+    batch_size = 32
     device = torch.device("cuda")
     net = get_model()
     net.to(device)
@@ -30,18 +30,28 @@ if __name__ == '__main__':
     optimizer = torch.optim.Adam(net.parameters())
 
     timers = {"load_data": Timer(), "train": Timer()}
-    base_log_dir = '/home/guy/tsofit/blindness detection/results'
+
+    # Guy CR: Duplication of root folder
+    base_log_dir = os.path.join(root_folder, 'results')
     train_desc = datetime.datetime.now()
+
+    # Guy CR: add optional name to each training
     log_dir = os.path.join(base_log_dir, train_desc.strftime("%d-%m-%Y (%H:%M:%S.%f)"))
     if os.path.isdir(log_dir):
         shutil.rmtree(log_dir)
-    writer_train = SummaryWriter(log_dir=log_dir, comment='test comment')
-    writer_validation = SummaryWriter(log_dir=os.path.join(log_dir, 'validation'), comment='test comment')
+    writer_train = SummaryWriter(log_dir=os.path.join(log_dir, 'train'))
+    writer_validation = SummaryWriter(log_dir=os.path.join(log_dir, 'validation'))
     run_counter = 0
 
-    train_dataset = BDDataset(csv_file=train_csv, data_dir=data_dir, transform=ToTensor())
+    transform = torchvision.transforms.Compose([torchvision.transforms.RandomCrop(size=256),
+                                               # torchvision.transforms.RandomRotation(0, 90),
+                                                #torchvision.transforms.RandomHorizontalFlip(p=0.5),
+                                                ])
+
+    train_dataset = BDDataset(csv_file=train_csv, data_dir=data_dir, transform=transform)
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=8)
-    validation_dataset = BDDataset(csv_file=validation_csv, data_dir=data_dir, transform=ToTensor())
+    validation_dataset = BDDataset(csv_file=validation_csv, data_dir=data_dir)
+    # Guy CR: Validation shouldn't be shuffled
     validation_dataloader = DataLoader(validation_dataset, batch_size=batch_size, shuffle=True, num_workers=8)
 
     for epoch in range(100):
@@ -64,11 +74,12 @@ if __name__ == '__main__':
 
             # print statistics
             running_loss += loss.item()
-            writer_train.add_scalar(tag='Loss', scalar_value=loss.item(), global_step=run_counter)
+            writer_train.add_scalar(tag='loss', scalar_value=loss.item(), global_step=run_counter)
             if i_batch % 5 == 0:  # print every 2000 mini-batches
                 print('[epoch: {}, batch: {}] loss: {:.3f}'.format(epoch + 1, i_batch + 1, loss.item()))
                 print("Timings: " + ", ".join(["{}: {:.2f}".format(k, v.average_time) for k, v in timers.items()]))
                 running_loss = 0.0
+                writer_train.add_image("input", sample_batched['image'][0], i_batch)
             timers["load_data"].start()
             writer_train.file_writer.flush()
 
@@ -80,7 +91,7 @@ if __name__ == '__main__':
 
         train_accuracy = (correct_labels_train / len(train_dataset))
         print('Train accuracy: ' + str(train_accuracy))
-        writer_train.add_scalar(tag='train_acc', scalar_value=train_accuracy, global_step=run_counter)
+        writer_train.add_scalar(tag='accuracy', scalar_value=train_accuracy, global_step=epoch)
         for i_batch, sample_batched in enumerate(validation_dataloader):
             outputs = net(sample_batched['image'].to(device)).detach().cpu()
             loss_val = criterion(outputs, sample_batched['label'])
@@ -88,9 +99,7 @@ if __name__ == '__main__':
 
         validation_accuracy = (correct_labels_validation / len(validation_dataset))
         print('Validation accuracy: ' + str(validation_accuracy))
-        writer_validation.add_scalar(tag='val_acc', scalar_value=validation_accuracy, global_step=run_counter)
-        writer_validation.add_scalar(tag='val_loss', scalar_value=loss_val, global_step=run_counter)
+        writer_validation.add_scalar(tag='accuracy', scalar_value=validation_accuracy, global_step=epoch)
+        writer_validation.add_scalar(tag='loss', scalar_value=loss_val, global_step=run_counter)
         writer_validation.file_writer.flush()
         torch.save(net.state_dict(), os.path.join(log_dir, 'model_epoch_{}.pth'.format(epoch)))
-
-
