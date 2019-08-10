@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from sklearn.metrics import accuracy_score
 import datetime
+import pandas as pd
 
 
 from timer import Timer
@@ -18,7 +19,7 @@ root_folder = '/media/guy/Files 3/Tsofit/blindness detection'
 data_dir = os.path.join(root_folder, 'train_images')
 train_csv = os.path.join(root_folder, 'train.csv')
 validation_csv = os.path.join(root_folder, 'validation.csv')
-
+base_log_dir = os.path.join(root_folder, 'results')
 
 if __name__ == '__main__':
     batch_size = 32
@@ -31,28 +32,27 @@ if __name__ == '__main__':
 
     timers = {"load_data": Timer(), "train": Timer()}
 
-    # Guy CR: Duplication of root folder
-    base_log_dir = os.path.join(root_folder, 'results')
     train_desc = datetime.datetime.now()
 
-    # Guy CR: add optional name to each training
-    log_dir = os.path.join(base_log_dir, train_desc.strftime("%d-%m-%Y (%H:%M:%S.%f)"))
+    experiment_name = "crop_s0.9_r1._jitter"
+    log_dir = os.path.join(base_log_dir, "{}_{}".format(train_desc.strftime("%d-%m-%Y (%H:%M:%S.%f)"), experiment_name))
     if os.path.isdir(log_dir):
         shutil.rmtree(log_dir)
     writer_train = SummaryWriter(log_dir=os.path.join(log_dir, 'train'))
     writer_validation = SummaryWriter(log_dir=os.path.join(log_dir, 'validation'))
     run_counter = 0
 
-    transform = torchvision.transforms.Compose([torchvision.transforms.RandomCrop(size=256),
-                                               # torchvision.transforms.RandomRotation(0, 90),
-                                                #torchvision.transforms.RandomHorizontalFlip(p=0.5),
-                                                ])
+    transforms = []
+    transforms.append(torchvision.transforms.RandomResizedCrop(size=256, scale=(0.9, 1.), ratio=(1.0, 1.0)))
+    # transforms.append(torchvision.transforms.RandomRotation((0, 90)))
+    transforms.append(torchvision.transforms.RandomHorizontalFlip(p=0.5))
+    transforms.append(torchvision.transforms.ColorJitter(brightness=0.2))
+    transform = torchvision.transforms.Compose(transforms=transforms)
 
     train_dataset = BDDataset(csv_file=train_csv, data_dir=data_dir, transform=transform)
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=8)
     validation_dataset = BDDataset(csv_file=validation_csv, data_dir=data_dir)
-    # Guy CR: Validation shouldn't be shuffled
-    validation_dataloader = DataLoader(validation_dataset, batch_size=batch_size, shuffle=True, num_workers=8)
+    validation_dataloader = DataLoader(validation_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
 
     for epoch in range(100):
         running_loss = 0.0
@@ -75,7 +75,7 @@ if __name__ == '__main__':
             # print statistics
             running_loss += loss.item()
             writer_train.add_scalar(tag='loss', scalar_value=loss.item(), global_step=run_counter)
-            if i_batch % 5 == 0:  # print every 2000 mini-batches
+            if i_batch % 5 == 0:
                 print('[epoch: {}, batch: {}] loss: {:.3f}'.format(epoch + 1, i_batch + 1, loss.item()))
                 print("Timings: " + ", ".join(["{}: {:.2f}".format(k, v.average_time) for k, v in timers.items()]))
                 running_loss = 0.0
