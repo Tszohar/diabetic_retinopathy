@@ -1,60 +1,70 @@
+import datetime
 import os
 import shutil
 
 import torch
-import torch.nn as nn
 import torchvision
+from sklearn.metrics import accuracy_score
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter
-from sklearn.metrics import accuracy_score
-import datetime
-import pandas as pd
 
-
-from timer import Timer
-from model import get_model
+import parameters
+from blindness_loss import MultipleBinaryLoss, RegressorLoss, BinaryLoss, MultiClassLoss
 from data import BDDataset
+from network import BDNetwork, Outputs
+from timer import Timer
 
-root_folder = '/media/guy/Files 3/Tsofit/blindness detection'
-data_dir = os.path.join(root_folder, 'train_images')
-train_csv = os.path.join(root_folder, 'train.csv')
-validation_csv = os.path.join(root_folder, 'validation.csv')
-base_log_dir = os.path.join(root_folder, 'results')
+loss_dict = {Outputs.REGRESSOR: RegressorLoss,
+             Outputs.MULTI_BINARY: MultipleBinaryLoss,
+             Outputs.BINARY: BinaryLoss,
+             Outputs.MULTI_CLASS: MultiClassLoss,
+             }
 
 if __name__ == '__main__':
+
+    ##############################   Network and train details   #######################################################
     batch_size = 32
-    device = torch.device("cuda")
-    net = get_model()
-    net.to(device)
-    criterion = nn.CrossEntropyLoss()
-    criterion.to(device)
+    epoch_size = 100
+    augmentation = False
+    classifier_type = Outputs.MULTI_CLASS
+    net = BDNetwork(classifier_type)
+    net.to(parameters.device)
+    blindness_loss = loss_dict[classifier_type]().to(parameters.device)
     optimizer = torch.optim.Adam(net.parameters())
+    experiment_name = "{}_{}".format(classifier_type.name, batch_size)
 
+    ##############################   Data augmentation & loading  ######################################################
+    transforms = []
+    transforms.append(torchvision.transforms.RandomResizedCrop(size=256, scale=(1., 1.), ratio=(1.0, 1.0)))
+    transforms.append(torchvision.transforms.RandomHorizontalFlip(p=0.5))
+    # transforms.append(torchvision.transforms.RandomRotation((0, 90)))
+    # transforms.append(torchvision.transforms.ColorJitter(brightness=0.2))
+    if augmentation:
+        transform = torchvision.transforms.Compose(transforms)
+    else:
+        transform = None
+
+    train_dataset = BDDataset(csv_file=parameters.train_csv, data_dir=parameters.data_dir, transform=transform)
+    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=8)
+    validation_dataset = BDDataset(csv_file=parameters.validation_csv, data_dir=parameters.data_dir)
+    validation_dataloader = DataLoader(validation_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
+
+    ####################################################################################################################
     timers = {"load_data": Timer(), "train": Timer()}
-
     train_desc = datetime.datetime.now()
 
-    experiment_name = "crop_s0.9_r1._jitter"
-    log_dir = os.path.join(base_log_dir, "{}_{}".format(train_desc.strftime("%d-%m-%Y (%H:%M:%S.%f)"), experiment_name))
+    log_dir = os.path.join(parameters.base_log_dir, "{}_{}".format(train_desc.strftime("%Y%m%d (%H:%M:%S.%f)"),
+                                                                   experiment_name))
     if os.path.isdir(log_dir):
         shutil.rmtree(log_dir)
+    print("Outputs dir: {}".format(log_dir))
     writer_train = SummaryWriter(log_dir=os.path.join(log_dir, 'train'))
     writer_validation = SummaryWriter(log_dir=os.path.join(log_dir, 'validation'))
     run_counter = 0
 
-    transforms = []
-    transforms.append(torchvision.transforms.RandomResizedCrop(size=256, scale=(0.9, 1.), ratio=(1.0, 1.0)))
-    # transforms.append(torchvision.transforms.RandomRotation((0, 90)))
-    transforms.append(torchvision.transforms.RandomHorizontalFlip(p=0.5))
-    transforms.append(torchvision.transforms.ColorJitter(brightness=0.2))
-    transform = torchvision.transforms.Compose(transforms=transforms)
+    ##############################   Training  #########################################################################
 
-    train_dataset = BDDataset(csv_file=train_csv, data_dir=data_dir, transform=transform)
-    train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=8)
-    validation_dataset = BDDataset(csv_file=validation_csv, data_dir=data_dir)
-    validation_dataloader = DataLoader(validation_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
-
-    for epoch in range(100):
+    for epoch in range(epoch_size):
         running_loss = 0.0
         correct_labels_train = 0
         correct_labels_validation = 0
@@ -65,9 +75,8 @@ if __name__ == '__main__':
             timers["load_data"].stop()
             optimizer.zero_grad()
             timers["train"].start()
-            outputs = net.forward(sample_batched['image'].to(device))
-
-            loss = criterion(outputs, sample_batched['label'].to(device))
+            outputs = net(sample_batched['image'].to(parameters.device))
+            loss = blindness_loss(outputs, sample_batched['diagnosis'].to(parameters.device))
             loss.backward()
             optimizer.step()
             timers["train"].stop()
@@ -83,23 +92,48 @@ if __name__ == '__main__':
             timers["load_data"].start()
             writer_train.file_writer.flush()
 
+        # Train Accuracy calculation
+        if classifier_type == Outputs.BINARY or classifier_type == Outputs.MULTI_BINARY or classifier_type == Outputs.MULTI_CLASS:
+            for i_batch, sample_batched in enumerate(train_dataloader):
+                outputs = net(sample_batched['image'].to(parameters.device)).detach()
+                loss = blindness_loss(outputs, sample_batched['diagnosis'].to(parameters.device))
+                if classifier_type == Outputs.BINARY:
+                    correct_labels_train += accuracy_score(outputs.argmax(1).cpu(),
+                                                           blindness_loss.convert_label(sample_batched['diagnosis']),
+                                                           normalize=False)
+                elif classifier_type == Outputs.MULTI_BINARY:
+                    correct_labels_train += accuracy_score(outputs.argmax(1).cpu(),
+                                                           sample_batched['diagnosis'],
+                                                           normalize=False)
+            train_accuracy = (correct_labels_train / len(train_dataset))
+            print('Train accuracy: ' + str(train_accuracy))
+            writer_train.add_scalar(tag='accuracy', scalar_value=train_accuracy, global_step=epoch)
+
+        ##############################   Validation  ###################################################################
+
         net.eval()
 
-        for i_batch, sample_batched in enumerate(train_dataloader):
-            outputs = net(sample_batched['image'].to(device)).detach().cpu()
-            correct_labels_train += accuracy_score(outputs.argmax(1), sample_batched['label'], normalize=False)
-
-        train_accuracy = (correct_labels_train / len(train_dataset))
-        print('Train accuracy: ' + str(train_accuracy))
-        writer_train.add_scalar(tag='accuracy', scalar_value=train_accuracy, global_step=epoch)
         for i_batch, sample_batched in enumerate(validation_dataloader):
-            outputs = net(sample_batched['image'].to(device)).detach().cpu()
-            loss_val = criterion(outputs, sample_batched['label'])
-            correct_labels_validation += accuracy_score(outputs.argmax(1), sample_batched['label'], normalize=False)
+            outputs = net(sample_batched['image'].to(parameters.device)).detach()
+            loss_val = blindness_loss.forward(outputs, sample_batched['diagnosis'].to(parameters.device))
+            writer_validation.add_scalar(tag='loss', scalar_value=loss_val, global_step=run_counter)
+            if classifier_type == Outputs.BINARY or classifier_type == Outputs.MULTI_BINARY or classifier_type == Outputs.MULTI_CLASS:
+                if classifier_type == Outputs.BINARY:
+                    correct_labels_validation += accuracy_score(outputs.argmax(1).cpu(),
+                                                                blindness_loss.convert_label(
+                                                                    sample_batched['diagnosis']).cpu(),
+                                                                normalize=False)
+                elif classifier_type == Outputs.MULTI_BINARY:
+                    correct_labels_validation += accuracy_score(outputs.argmax(1).cpu(),
+                                                           sample_batched['diagnosis'],
+                                                           normalize=False)
 
-        validation_accuracy = (correct_labels_validation / len(validation_dataset))
-        print('Validation accuracy: ' + str(validation_accuracy))
-        writer_validation.add_scalar(tag='accuracy', scalar_value=validation_accuracy, global_step=epoch)
-        writer_validation.add_scalar(tag='loss', scalar_value=loss_val, global_step=run_counter)
-        writer_validation.file_writer.flush()
+
+        # Validation Accuracy calculation
+        if classifier_type == Outputs.BINARY or classifier_type == Outputs.MULTI_BINARY or classifier_type == Outputs.MULTI_CLASS:
+            validation_accuracy = (correct_labels_validation / len(validation_dataset))
+            print('Validation accuracy: ' + str(validation_accuracy))
+            writer_validation.add_scalar(tag='accuracy', scalar_value=validation_accuracy, global_step=epoch)
+            writer_validation.file_writer.flush()
+
         torch.save(net.state_dict(), os.path.join(log_dir, 'model_epoch_{}.pth'.format(epoch)))
