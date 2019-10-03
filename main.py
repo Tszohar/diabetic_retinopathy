@@ -1,6 +1,7 @@
 import datetime
 import os
 import shutil
+import numpy as np
 
 import torch
 import torchvision
@@ -11,6 +12,7 @@ from torch.utils.tensorboard import SummaryWriter
 import parameters
 from blindness_loss import MultipleBinaryLoss, RegressorLoss, BinaryLoss, MultiClassLoss
 from data import BDDataset
+from functions import predict_label
 from network import BDNetwork, Outputs
 from timer import Timer
 
@@ -26,7 +28,7 @@ if __name__ == '__main__':
     batch_size = 32
     epoch_size = 100
     augmentation = False
-    classifier_type = Outputs.MULTI_CLASS
+    classifier_type = Outputs.REGRESSOR
     net = BDNetwork(classifier_type)
     net.to(parameters.device)
     blindness_loss = loss_dict[classifier_type]().to(parameters.device)
@@ -97,37 +99,25 @@ if __name__ == '__main__':
             for i_batch, sample_batched in enumerate(train_dataloader):
                 outputs = net(sample_batched['image'].to(parameters.device)).detach()
                 loss = blindness_loss(outputs, sample_batched['diagnosis'].to(parameters.device))
-                if classifier_type == Outputs.BINARY:
-                    correct_labels_train += accuracy_score(outputs.argmax(1).cpu(),
-                                                           blindness_loss.convert_label(sample_batched['diagnosis']),
-                                                           normalize=False)
-                elif classifier_type == Outputs.MULTI_BINARY:
-                    correct_labels_train += accuracy_score(outputs.argmax(1).cpu(),
-                                                           sample_batched['diagnosis'],
-                                                           normalize=False)
-            train_accuracy = (correct_labels_train / len(train_dataset))
-            print('Train accuracy: ' + str(train_accuracy))
-            writer_train.add_scalar(tag='accuracy', scalar_value=train_accuracy, global_step=epoch)
+                predicted_labels = predict_label(outputs, classifier_type)
+                correct_labels_train += accuracy_score(predicted_labels.cpu(), blindness_loss.converted_label.cpu(), normalize=False) # sample_batched['diagnosis']
+        train_accuracy = (correct_labels_train / len(train_dataset))
 
-        ##############################   Validation  ###################################################################
+        print('Train accuracy: ' + str(train_accuracy))
+        writer_train.add_scalar(tag='accuracy', scalar_value=train_accuracy, global_step=epoch)
+
+##############################   Validation  ###################################################################
 
         net.eval()
 
+        correct_labels_validation = 0
         for i_batch, sample_batched in enumerate(validation_dataloader):
             outputs = net(sample_batched['image'].to(parameters.device)).detach()
             loss_val = blindness_loss.forward(outputs, sample_batched['diagnosis'].to(parameters.device))
             writer_validation.add_scalar(tag='loss', scalar_value=loss_val, global_step=run_counter)
+            predicted_labels = predict_label(outputs, classifier_type)
             if classifier_type == Outputs.BINARY or classifier_type == Outputs.MULTI_BINARY or classifier_type == Outputs.MULTI_CLASS:
-                if classifier_type == Outputs.BINARY:
-                    correct_labels_validation += accuracy_score(outputs.argmax(1).cpu(),
-                                                                blindness_loss.convert_label(
-                                                                    sample_batched['diagnosis']).cpu(),
-                                                                normalize=False)
-                elif classifier_type == Outputs.MULTI_BINARY:
-                    correct_labels_validation += accuracy_score(outputs.argmax(1).cpu(),
-                                                           sample_batched['diagnosis'],
-                                                           normalize=False)
-
+                correct_labels_validation += accuracy_score(predicted_labels.cpu(), blindness_loss.converted_label.cpu(), normalize=False)
 
         # Validation Accuracy calculation
         if classifier_type == Outputs.BINARY or classifier_type == Outputs.MULTI_BINARY or classifier_type == Outputs.MULTI_CLASS:

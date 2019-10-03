@@ -14,8 +14,7 @@ class Outputs(Enum):
     BINARY = 2
     MULTI_CLASS = 5
     REGRESSOR = 1
-    MULTI_BINARY = 2
-
+    MULTI_BINARY = 8
 
 
 class BDNetwork(nn.Module):

@@ -2,6 +2,7 @@
 
 import os
 import shutil
+from PIL import Image
 import pandas as pd
 import numpy as np
 from sklearn.metrics import accuracy_score, confusion_matrix
@@ -13,6 +14,27 @@ import parameters
 #     criterion.to(device)
 #     loss = criterion(dataframe['predicted_label'], dataframe['label'])
 #     return loss
+
+class ImageProcessor:
+    def __init__(self):
+        self.image_name = ''
+        self.image_data = self.load()
+        self.diagnosis = 0
+        self.converted_label = 0
+        self.image_path = os.path.join(parameters.data_dir, self.image_name)
+
+    def load(self):
+        image = Image.open(self.image_path).convert('RGB')
+        image = image.resize([256, 256])
+        return image
+
+    def get_meta_data(self):
+        exif_data = self.image_data._getexif()
+        return exif_data
+
+    def copy_image(self):
+        pass
+
 
 
 
@@ -61,9 +83,5 @@ class ConvertDataset2Csv:
 
     def split_scores(self, predicate):
         for score in range(len(predicate[1])):
-            scores = {score: predicate[score]}
+            scores = {'score {}'.format(score): predicate[score]}
             return scores
-
-    def save(self, data):
-        dataframe = pd.DataFrame(data)
-        dataframe.to_csv(self.output_path)
