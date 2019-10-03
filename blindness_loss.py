@@ -1,4 +1,3 @@
-import numpy as np
 import torch
 import torch.nn as nn
 import parameters
@@ -51,10 +50,8 @@ class MultipleBinaryLoss(nn.Module):
             converted_label = self.convert_label(targets, threshold=idx)
             loss[:, idx] = self.criterion(predictions[:, score:score+2], converted_label)
             idx += 1
-        #self.converted_label = torch.sum(loss, axis=1)[:, None]
         self.converted_label = targets
         return torch.mean(loss)
-        #return torch.sum(loss)
 
     def convert_label(self, ground_truth, threshold):
         return (ground_truth > threshold).long()
