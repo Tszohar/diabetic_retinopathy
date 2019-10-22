@@ -17,7 +17,7 @@ class BDDataset(Dataset):
     def __getitem__(self, idx):
         img_name = os.path.join(self.data_dir, self.labels.iloc[idx]['id_code']) + '.png'
         image = Image.open(img_name).convert('RGB')
-        image = image.resize([256, 256])
+        image = image.resize([224, 224])
         sample = {'image': image, 'name': img_name,
                   'diagnosis': self.labels["diagnosis"][idx]}
 
@@ -25,4 +25,3 @@ class BDDataset(Dataset):
             sample['image'] = self.transform(sample['image'])
         sample['image'] = transforms.ToTensor()(sample['image'])
         return sample
-

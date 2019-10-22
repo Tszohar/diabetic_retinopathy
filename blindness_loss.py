@@ -60,6 +60,7 @@ class MultipleBinaryLoss(nn.Module):
 class MultiClassLoss(nn.Module):
     def __init__(self):
         super().__init__()
+        weight = torch.tensor([0.406, 1.981, 0.733, 3.758, 2.484])
         self.criterion = nn.CrossEntropyLoss()
         self.criterion.to(parameters.device)
         self.converted_label = 0

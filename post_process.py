@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from sklearn.metrics import accuracy_score, confusion_matrix
+from sklearn.metrics import accuracy_score, confusion_matrix, cohen_kappa_score
 
 
 class Analyzer:
@@ -13,6 +13,10 @@ class Analyzer:
     def accuracy2(self, predicted_labels, correct_labels):
         accuracy = accuracy_score(y_true=predicted_labels, y_pred=correct_labels)
         return accuracy
+
+    def kappa(self, predicted_labels, correct_labels):
+        kappa_score = cohen_kappa_score(y1=predicted_labels, y2=correct_labels)
+        return kappa_score
 
     def mislabeled_images(self, predicted_labels, correct_labels, output_path):
         mislabeled_idxs = np.where(predicted_labels != correct_labels)[0]
@@ -74,6 +78,10 @@ class Analyzer:
     def statistics(self, num_of_classes, predicted_labels, correct_labels, output_path):
 
         accuracy = self.accuracy(predicted_labels=predicted_labels, correct_labels=correct_labels)
+        print('total accuracy: {}'.format(accuracy))
+        kappa = self.kappa(predicted_labels=predicted_labels, correct_labels=correct_labels)
+        print('kappa score: {}'.format(kappa))
+
         conf_m = self.conf_matrix(predicted_labels=predicted_labels, correct_labels=correct_labels)
         print('conf matrix:')
         print(conf_m)
@@ -91,6 +99,7 @@ class Analyzer:
                                       'class#': range(num_of_classes),
                                       'recall': recall,
                                       'percision': percision,
+                                      'kappa': kappa,
                                    #   'F1': f1,
                                       })
         self.save_csv(statistics_df, output_path)

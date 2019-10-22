@@ -14,6 +14,7 @@ from blindness_loss import MultipleBinaryLoss, RegressorLoss, BinaryLoss, MultiC
 from data import BDDataset
 from functions import predict_label
 from network import BDNetwork, Outputs
+from resnet import ResNet
 from timer import Timer
 
 loss_dict = {Outputs.REGRESSOR: RegressorLoss,
@@ -28,12 +29,24 @@ if __name__ == '__main__':
     batch_size = 32
     epoch_size = 100
     augmentation = False
-    classifier_type = Outputs.REGRESSOR
-    net = BDNetwork(classifier_type)
+    classifier_type = Outputs.MULTI_CLASS
+    net = ResNet()
+
+    #net = BDNetwork(classifier_type)
+
+    binary2multi = False
+    if binary2multi:
+        # Loads trained binary model and convert positive images to multi class classifier
+        model_path = "/media/guy/Files 3/Tsofit/blindness detection/results/20190919 (11:56:16.840499)_BINARY_32/model_epoch_78.pth"
+        binary_net = BDNetwork(Outputs.BINARY)
+        model = torch.load(model_path)
+        binary_net.load_state_dict(model)
+        binary_net.to(parameters.device)
     net.to(parameters.device)
     blindness_loss = loss_dict[classifier_type]().to(parameters.device)
     optimizer = torch.optim.Adam(net.parameters())
-    experiment_name = "{}_{}".format(classifier_type.name, batch_size)
+    comment = 'Binary2Multi'
+    experiment_name = "{}_{}_{}".format(classifier_type.name, batch_size, comment)
 
     ##############################   Data augmentation & loading  ######################################################
     transforms = []
@@ -77,8 +90,15 @@ if __name__ == '__main__':
             timers["load_data"].stop()
             optimizer.zero_grad()
             timers["train"].start()
-            outputs = net(sample_batched['image'].to(parameters.device))
-            loss = blindness_loss(outputs, sample_batched['diagnosis'].to(parameters.device))
+            if binary2multi:
+                outputs = binary_net(sample_batched['image'].to(parameters.device))
+                binary_classes = outputs.argmax(axis=1)
+                positive_outputs = sample_batched['diagnosis'][binary_classes == 1]
+                outputs = net(sample_batched['image'][positive_outputs].to(parameters.device))
+                loss = blindness_loss(outputs, sample_batched['diagnosis'][positive_outputs].to(parameters.device))
+            else:
+                outputs = net(sample_batched['image'].to(parameters.device))
+                loss = blindness_loss(outputs, sample_batched['diagnosis'].to(parameters.device))
             loss.backward()
             optimizer.step()
             timers["train"].stop()
@@ -97,10 +117,17 @@ if __name__ == '__main__':
         # Train Accuracy calculation
         if classifier_type == Outputs.BINARY or classifier_type == Outputs.MULTI_BINARY or classifier_type == Outputs.MULTI_CLASS:
             for i_batch, sample_batched in enumerate(train_dataloader):
-                outputs = net(sample_batched['image'].to(parameters.device)).detach()
-                loss = blindness_loss(outputs, sample_batched['diagnosis'].to(parameters.device))
+                if binary2multi:
+                    outputs = binary_net(sample_batched['image'].to(parameters.device))
+                    binary_classes = outputs.argmax(axis=1)
+                    positive_outputs = sample_batched['diagnosis'][binary_classes == 1]
+                    outputs = net(sample_batched['image'][positive_outputs].to(parameters.device))
+                    loss = blindness_loss(outputs, sample_batched['diagnosis'][positive_outputs].to(parameters.device))
+                else:
+                    outputs = net(sample_batched['image'].to(parameters.device).to(parameters.device))
+                    loss = blindness_loss(outputs, sample_batched['diagnosis'].to(parameters.device))
                 predicted_labels = predict_label(outputs, classifier_type)
-                correct_labels_train += accuracy_score(predicted_labels.cpu(), blindness_loss.converted_label.cpu(), normalize=False) # sample_batched['diagnosis']
+                correct_labels_train += accuracy_score(predicted_labels.cpu(), blindness_loss.converted_label.cpu(), normalize=False)
         train_accuracy = (correct_labels_train / len(train_dataset))
 
         print('Train accuracy: ' + str(train_accuracy))
@@ -112,8 +139,15 @@ if __name__ == '__main__':
 
         correct_labels_validation = 0
         for i_batch, sample_batched in enumerate(validation_dataloader):
-            outputs = net(sample_batched['image'].to(parameters.device)).detach()
-            loss_val = blindness_loss.forward(outputs, sample_batched['diagnosis'].to(parameters.device))
+            if binary2multi:
+                outputs = binary_net(sample_batched['image'].to(parameters.device))
+                binary_classes = outputs.argmax(axis=1)
+                positive_outputs = sample_batched['diagnosis'][binary_classes == 1]
+                outputs = net(sample_batched['image'][positive_outputs].to(parameters.device))
+                loss_val = blindness_loss(outputs, sample_batched['diagnosis'][positive_outputs].to(parameters.device))
+            else:
+                outputs = net(sample_batched['image'].to(parameters.device)).detach()
+                loss_val = blindness_loss.forward(outputs, sample_batched['diagnosis'].to(parameters.device))
             writer_validation.add_scalar(tag='loss', scalar_value=loss_val, global_step=run_counter)
             predicted_labels = predict_label(outputs, classifier_type)
             if classifier_type == Outputs.BINARY or classifier_type == Outputs.MULTI_BINARY or classifier_type == Outputs.MULTI_CLASS:
