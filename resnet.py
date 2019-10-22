@@ -28,6 +28,7 @@ class Conv2(nn.Module):
             self.fix_dimension = True
             self.in_size = input_size
             self.out_size = output_size
+            self.conv_1x1 = nn.Conv2d(self.in_size, self.out_size, 1, stride=2).to('cuda')
         self.model = nn.Sequential(
             nn.Conv2d(input_size, output_size, 3, stride=stride, padding=1),
             nn.BatchNorm2d(output_size),
@@ -38,8 +39,7 @@ class Conv2(nn.Module):
 
     def forward(self, input):
         if self.fix_dimension:
-            conv_1x1 = nn.Conv2d(self.in_size, self.out_size, 1, stride=2).to('cuda')
-            converted_input = conv_1x1(input)
+            converted_input = self.conv_1x1(input)
             return self.model(input) + converted_input
         return self.model(input) + input
 
@@ -48,8 +48,11 @@ class Block(nn.Module):
     def __init__(self, input_size, output_size, stride=1, fix_dimension=False):
         super().__init__()
         self.conv = nn.Sequential(Conv2(input_size=input_size, output_size=output_size, stride=stride,
-                                        fix_dimension=fix_dimension), nn.ReLU(inplace=True),
-                                  Conv2(input_size=output_size, output_size=output_size), nn.ReLU(inplace=True))
+                                        fix_dimension=fix_dimension),
+                                  nn.ReLU(inplace=True),
+
+                                  Conv2(input_size=output_size, output_size=output_size),
+                                  nn.ReLU(inplace=True))
 
     def forward(self, input):
         return self.conv(input)
