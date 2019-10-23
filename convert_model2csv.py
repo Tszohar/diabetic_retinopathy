@@ -7,6 +7,7 @@ import parameters
 from data import BDDataset
 from functions import predict_label
 from network import BDNetwork
+from resnet import ResNet
 
 
 def model2csv(data_csv, data_dir, model_path, output_path, classifier_type):
@@ -30,7 +31,7 @@ def model2csv(data_csv, data_dir, model_path, output_path, classifier_type):
     dataset = BDDataset(csv_file=data_csv, data_dir=data_dir)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=8)
     model = torch.load(model_path)
-    net = BDNetwork(classifier_type)
+    net = ResNet()
     net.to(parameters.device)
     net.load_state_dict(model)
     net.eval()

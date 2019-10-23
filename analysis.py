@@ -5,18 +5,19 @@ import parameters
 from convert_model2csv import model2csv
 from data import BDDataset
 from network import BDNetwork, Outputs
+from resnet import ResNet
 
 if __name__ == '__main__':
 
     batch_size = 32
     classifier_type = Outputs.MULTI_CLASS
 
-    model_path = "/media/guy/Files 3/Tsofit/blindness detection/results/20191002 (10:50:00.518925)_MULTI_CLASS_32/model_epoch_99.pth"
+    model_path = "/media/guy/Files 3/Tsofit/blindness detection/results/20191022 (19:50:53.594397)_MULTI_CLASS_32_Binary2Multi/model_epoch_99.pth"
     output_path = os.path.join(os.path.dirname(model_path), 'analysis_dir', 'analysis.csv')
     statistics_path = os.path.join(os.path.dirname(model_path), 'analysis_dir', 'statistics.csv')
     mislabeled_path = os.path.join(os.path.dirname(model_path), 'analysis_dir', 'mislabeled_images.csv')
     model = torch.load(model_path)
-    net = BDNetwork(classifier_type)
+    net = ResNet() #BDNetwork(classifier_type)
     net.load_state_dict(model)
     net.to(parameters.device)
 
