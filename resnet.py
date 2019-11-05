@@ -66,7 +66,8 @@ class ResNet(nn.Module):
         self.conv3 = Block(input_size=64, output_size=128, stride=2, fix_dimension=True)
         self.conv4 = Block(input_size=128, output_size=256, stride=2, fix_dimension=True)
         self.conv5 = Block(input_size=256, output_size=512, stride=2, fix_dimension=True)
-        self.end = nn.Sequential(nn.AvgPool2d(7), Flatten(), nn.Linear(512, 5))
+        self.vectorize = nn.Sequential(nn.AvgPool2d(7), Flatten())
+        self.end = nn.Linear(512, 5)
 
     def forward(self, input):
         conv1 = self.conv1(input)
@@ -74,6 +75,7 @@ class ResNet(nn.Module):
         conv3 = self.conv3(conv2)
         conv4 = self.conv4(conv3)
         conv5 = self.conv5(conv4)
-        final_layer = self.end(conv5)
+        vectorize_data = self.vectorize(conv5)
+        final_layer = self.end(vectorize_data)
         return final_layer
 

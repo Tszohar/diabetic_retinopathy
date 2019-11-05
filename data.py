@@ -15,7 +15,12 @@ class BDDataset(Dataset):
         return len(self.labels)
 
     def __getitem__(self, idx):
-        img_name = os.path.join(self.data_dir, self.labels.iloc[idx]['id_code']) + '.png'
+        img_name = os.path.join(self.data_dir, self.labels.iloc[idx]['id_code'])
+        if os.path.isfile(img_name + '.png'):
+            img_name = img_name + '.png'
+        else:
+            img_name = img_name + '.jpeg'
+
         image = Image.open(img_name).convert('RGB')
         image = image.resize([224, 224])
         sample = {'image': image, 'name': img_name,

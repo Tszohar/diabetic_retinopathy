@@ -6,9 +6,11 @@ from network import Outputs
 from post_process import RegressorAnalyzer, MultiBinaryAnalyzer, BinaryAnalyzer, MultiClassAnalyzer
 
 root_folder = '/media/guy/Files 3/Tsofit/blindness detection'
-data_dir = os.path.join(root_folder, 'train_images')
-resized_data_dir = os.path.join(root_folder, 'resized_train_images')
+data_dir = os.path.join(root_folder, 'train_images_resized')
+data2015_dir = os.path.join(root_folder, 'train_images_2015_resized')
 train_csv = os.path.join(root_folder, 'train.csv')
+train2015_csv = os.path.join(root_folder, 'train2015.csv')
+
 train_over_csv = os.path.join(root_folder, 'train_over.csv')
 validation_csv = os.path.join(root_folder, 'validation.csv')
 base_log_dir = os.path.join(root_folder, 'results')
