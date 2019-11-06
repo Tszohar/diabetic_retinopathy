@@ -10,7 +10,7 @@ from resnet import ResNet
 import numpy as np
 
 batch_size = 256
-model_path = "/media/guy/Files 3/Tsofit/blindness detection/results/20191104 (14:22:59.927118)_MULTI_CLASS_256_Binary2Multi/model_epoch_98.pth"
+model_path = "/media/guy/Files 3/Tsofit/blindness detection/results/20191105 (14:34:01.867930)_MULTI_CLASS_256_2HeadedResnet/model_epoch_35.pth"
 colors = ['red', 'green', 'blue', 'purple', 'black', 'cyan']
 
 
@@ -24,18 +24,20 @@ model = torch.load(model_path)
 net.load_state_dict(model)
 net.to(parameters.device)
 net.eval()
+torch.no_grad()
+torch.set_grad_enabled(False)
 
 for i_batch, sample_batched in enumerate(train_dataloader):
-    outputs = net(sample_batched['image'].to(parameters.device)).detach()
-    params_vec = net.vectorize(sample_batched['image']).detach()
+    params_vec = net.get_features(sample_batched['image'].to(parameters.device))
     if i_batch % 10 == 0:
         print("batch {}/{}".format(i_batch, len(train_dataloader)))
+
     if (i_batch == 0):
-        params = np.array(params_vec)
+        params = np.array(params_vec.cpu())
         labels = np.array(sample_batched['diagnosis'])
     else:
         labels = np.concatenate((labels, np.array(sample_batched['diagnosis'])), axis=0)
-        params = np.concatenate((params, params_vec), axis=0)
+        params = np.concatenate((params, params_vec.cpu()), axis=0)
 pca = PCA(n_components=50, svd_solver='full')
 reduced_features = pca.fit_transform(params)
 samples_tsne = TSNE(n_components=2).fit_transform(reduced_features)
