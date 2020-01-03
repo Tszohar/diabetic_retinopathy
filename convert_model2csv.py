@@ -31,9 +31,9 @@ def model2csv(data_csv, data_dir, model_path, output_path, classifier_type):
     dataset = BDDataset(csv_file=data_csv, data_dir=data_dir)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=8)
     model = torch.load(model_path)
-    net = ResNet()
+    net = ResNet(num_outputs=5)
     net.to(parameters.device)
-    net.load_state_dict(model)
+    net.load_state_dict(model, strict=False)
     net.eval()
     blindness_loss = parameters.loss_dict[classifier_type]().to(parameters.device)
 

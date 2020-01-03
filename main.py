@@ -11,7 +11,7 @@ from torch.utils.tensorboard import SummaryWriter
 
 import parameters
 from blindness_loss import MultipleBinaryLoss, RegressorLoss, BinaryLoss, MultiClassLoss
-from data import BDDataset
+from data import BDDataset, Balanced_Sampler
 from functions import predict_label
 from network import BDNetwork, Outputs
 from resnet import ResNet
@@ -26,28 +26,34 @@ loss_dict = {Outputs.REGRESSOR: RegressorLoss,
 if __name__ == '__main__':
 
     ##############################   Network and train details   #######################################################
-    batch_size = 256
+    batch_size = 64
     epoch_size = 100
     augmentation = False
     classifier_type = Outputs.MULTI_CLASS
-    net = ResNet()
-
-    #net = BDNetwork(classifier_type)
-
+    net = ResNet(num_outputs=5)
     net.to(parameters.device)
-    blindness_loss_multi = loss_dict[classifier_type]().to(parameters.device)
-    blindness_loss_binary = BinaryLoss().to(parameters.device)
+
+    # # model_path = "/media/guy/Files 3/Tsofit/blindness detection/results/20191114 (11:50:48.136229)_BINARY_64_ResNetBinary_all/model_epoch_9.pth"
+    # model_path = model_path = '/media/guy/Files 3/Tsofit/blindness detection/results/20191117 (11:52:01.684390)_BINARY_64_Binary_smallDS/model_epoch_99.pth'
+    model_path = '/media/guy/Files 3/Tsofit/blindness detection/results/20191118 (16:35:24.924151)_MULTI_CLASS_64_multi_largeDS/model_epoch_55.pth'
+    model = torch.load(model_path)
+    # model['multi_class.bias'] = torch.rand([5])
+    # model['multi_class.weight'] = torch.rand([5, 512])
+    net.load_state_dict(model, strict=False)
+
+    blindness_loss = loss_dict[classifier_type]().to(parameters.device)
 
     optimizer = torch.optim.Adam(net.parameters(), lr=1e-3)
-    comment = '2HeadedResnet'
+    comment = 'multi_largeDS'
     experiment_name = "{}_{}_{}".format(classifier_type.name, batch_size, comment)
 
     ##############################   Data augmentation & loading  ######################################################
+
     transforms = []
-    transforms.append(torchvision.transforms.RandomResizedCrop(size=256, scale=(1., 1.), ratio=(1.0, 1.0)))
+    transforms.append(torchvision.transforms.RandomResizedCrop(size=224, scale=(1., 1.), ratio=(1.0, 1.0)))
     transforms.append(torchvision.transforms.RandomHorizontalFlip(p=0.5))
-    # transforms.append(torchvision.transforms.RandomRotation((0, 90)))
-    # transforms.append(torchvision.transforms.ColorJitter(brightness=0.2))
+    transforms.append(torchvision.transforms.RandomRotation((0, 90)))
+    transforms.append(torchvision.transforms.ColorJitter(brightness=0.2))
     if augmentation:
         transform = torchvision.transforms.Compose(transforms)
     else:
@@ -56,9 +62,11 @@ if __name__ == '__main__':
     train_dataset = BDDataset(csv_file=parameters.train_csv, data_dir=parameters.data_dir, transform=transform)
     train2015_dataset = BDDataset(csv_file=parameters.train2015_csv, data_dir=parameters.data2015_dir, transform=transform)
     dataset_combined = train_dataset + train2015_dataset
-    train_dataloader = DataLoader(dataset_combined, batch_size=batch_size, shuffle=True, num_workers=8)
+    train_sick_dataset = BDDataset(csv_file=parameters.train_sick, data_dir=parameters.data_dir_all, transform=transform)
+    train_dataloader = DataLoader(dataset_combined, batch_size=batch_size, shuffle=False, num_workers=8, sampler=Balanced_Sampler(dataset_combined))
 
     validation_dataset = BDDataset(csv_file=parameters.validation_csv, data_dir=parameters.data_dir)
+    validation_sick_dataset = BDDataset(csv_file=parameters.validation_csv_sick, data_dir=parameters.data_dir_all)
     validation_dataloader = DataLoader(validation_dataset, batch_size=batch_size, shuffle=False, num_workers=8)
 
     ####################################################################################################################
@@ -78,23 +86,20 @@ if __name__ == '__main__':
 
     for epoch in range(epoch_size):
         running_loss = 0.0
-        correct_multi_labels_train = 0
-        correct_binary_labels_train = 0
+        correct_labels_train = 0
         correct_labels_validation = 0
         timers["load_data"].start()
         net.train()
         torch.set_grad_enabled(True)
-        params = np.zeros(len(train_dataset))
         for i_batch, sample_batched in enumerate(train_dataloader):
             run_counter += 1
             timers["load_data"].stop()
             optimizer.zero_grad()
             timers["train"].start()
 
-            outputs, binary_outputs = net(sample_batched['image'].to(parameters.device))
-            multi_loss = blindness_loss_multi(outputs, sample_batched['diagnosis'].to(parameters.device))
-            binary_loss = blindness_loss_binary(binary_outputs, blindness_loss_binary.convert_label(sample_batched['diagnosis']))
-            loss = multi_loss + binary_loss
+            outputs = net(sample_batched['image'].to(parameters.device))
+            # sample_batched['diagnosis'] = sample_batched['diagnosis'] - 1
+            loss = blindness_loss(outputs, sample_batched['diagnosis'].long().to(parameters.device))
             loss.backward()
             optimizer.step()
             timers["train"].stop()
@@ -113,23 +118,18 @@ if __name__ == '__main__':
         # # Train Accuracy calculation
         if classifier_type != Outputs.REGRESSOR:
             for i_batch, sample_batched in enumerate(train_dataloader):
-                outputs, binary_outputs = net(sample_batched['image'].to(parameters.device).to(parameters.device))
-                multi_loss = blindness_loss_multi(outputs, sample_batched['diagnosis'].to(parameters.device))
-                binary_loss = blindness_loss_binary(binary_outputs,
-                                            blindness_loss_binary.convert_label(sample_batched['diagnosis']))
-                predicted_labels_multi = predict_label(outputs, classifier_type)
-                correct_multi_labels_train += accuracy_score(predicted_labels_multi.cpu(),
-                                                             blindness_loss_multi.converted_label.cpu(), normalize=False)
-                predicted_labels_binary = predict_label(binary_outputs, classifier_type)
-                correct_binary_labels_train += accuracy_score(predicted_labels_binary.cpu(),
-                                                              blindness_loss_binary.converted_label.cpu(), normalize=False)
-        train_accuracy = (correct_multi_labels_train / len(train_dataset))
-        train_accuracy_binary = (correct_binary_labels_train / len(train_dataset))
+                outputs = net(sample_batched['image'].to(parameters.device).to(parameters.device))
+                # sample_batched['diagnosis'] = sample_batched['diagnosis'] - 1
+
+                loss = blindness_loss(outputs, sample_batched['diagnosis'].long().to(parameters.device))
+
+                predicted_labels = predict_label(outputs, classifier_type)
+                correct_labels_train += accuracy_score(predicted_labels.cpu(),
+                                                       blindness_loss.converted_label.cpu(), normalize=False)
+        train_accuracy = (correct_labels_train / len(dataset_combined))
 
         print('Train accuracy: ' + str(train_accuracy))
         writer_train.add_scalar(tag='accuracy', scalar_value=train_accuracy, global_step=epoch)
-        writer_train.add_scalar(tag='train accuracy: binary Vs multi', scalar_value=train_accuracy, global_step=epoch)
-        writer_train.add_scalar(tag='train accuracy: binary Vs multi', scalar_value=train_accuracy_binary, global_step=epoch)
 
 ##############################   Validation  ###################################################################
 
@@ -138,16 +138,14 @@ if __name__ == '__main__':
         torch.set_grad_enabled(False)
         correct_labels_validation = 0
         for i_batch, sample_batched in enumerate(validation_dataloader):
-            outputs, binary_outputs = net(sample_batched['image'].to(parameters.device))
-            loss_multi_val = blindness_loss_multi.forward(outputs, sample_batched['diagnosis'].to(parameters.device))
-            # loss_binary_val = blindness_loss_binary.forward(binary_outputs,
-            #                                                 blindness_loss_binary.convert_label(sample_batched['diagnosis']))
-            loss_val = loss_multi_val  #+ loss_binary_val
+            outputs = net(sample_batched['image'].to(parameters.device))
+            # sample_batched['diagnosis'] = sample_batched['diagnosis'] - 1
 
+            loss_val = blindness_loss(outputs, sample_batched['diagnosis'].long().to(parameters.device))
             writer_validation.add_scalar(tag='loss', scalar_value=loss_val, global_step=run_counter)
             predicted_labels = predict_label(outputs, classifier_type)
             if classifier_type != Outputs.REGRESSOR:
-                correct_labels_validation += accuracy_score(predicted_labels.cpu(), blindness_loss_multi.converted_label.cpu(), normalize=False)
+                correct_labels_validation += accuracy_score(predicted_labels.cpu(), blindness_loss.converted_label.cpu(), normalize=False)
 
         # Validation Accuracy calculation
         if classifier_type != Outputs.REGRESSOR:

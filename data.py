@@ -1,7 +1,9 @@
 import os
+from collections import Sized
+
 import pandas as pd
 from PIL import Image
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, Sampler
 from torchvision import transforms
 
 
@@ -30,3 +32,23 @@ class BDDataset(Dataset):
             sample['image'] = self.transform(sample['image'])
         sample['image'] = transforms.ToTensor()(sample['image'])
         return sample
+
+
+class Balanced_Sampler(Sampler):
+    def __init__(self, data_source: Sized):
+        super().__init__(data_source)
+        self.num_samples = len(data_source)
+        self.num_of_classes = 5
+        self.samples_per_class = len(data_source) / self.num_of_classes
+        self.data = data_source
+
+    def __len__(self):
+        return len(self.num_samples)
+
+    def __iter__(self):
+        print('bla')
+        batch = []
+
+        batch.append(idx)
+
+        return iter(range(self.num_samples))

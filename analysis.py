@@ -12,16 +12,16 @@ if __name__ == '__main__':
     batch_size = 32
     classifier_type = Outputs.MULTI_CLASS
 
-    model_path = "/media/guy/Files 3/Tsofit/blindness detection/results/20191022 (19:50:53.594397)_MULTI_CLASS_32_Binary2Multi/model_epoch_99.pth"
-    output_path = os.path.join(os.path.dirname(model_path), 'analysis_dir', 'analysis.csv')
+    model_path = "/media/guy/Files 3/Tsofit/blindness detection/results/20191111 (16:28:16.076528)_MULTI_CLASS_64_HealthyAndSick/model_epoch_21.pth"
+    output_path = os.path.join(os.path.dirname(model_path), 'analysis_dir_train', 'analysis.csv')
     statistics_path = os.path.join(os.path.dirname(model_path), 'analysis_dir', 'statistics.csv')
     mislabeled_path = os.path.join(os.path.dirname(model_path), 'analysis_dir', 'mislabeled_images.csv')
     model = torch.load(model_path)
-    net = ResNet() #BDNetwork(classifier_type)
-    net.load_state_dict(model)
+    net = ResNet(num_outputs=5) #BDNetwork(classifier_type)
+    net.load_state_dict(model, strict=False)
     net.to(parameters.device)
 
-    dataset = BDDataset(csv_file=parameters.validation_csv, data_dir=parameters.data_dir)
+    dataset = BDDataset(csv_file=parameters.train_csv, data_dir=parameters.data_dir)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, num_workers=1)
 
     # Converting model output from dataset to csv if it doesn't exists
